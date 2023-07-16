@@ -88,7 +88,7 @@ impl Sweep {
         if self.negate {
             self.target_period = self.sequencer.period - shift_result;
             if self.is_channel_1 {
-                self.target_period -= 1;
+                self.target_period = self.target_period.wrapping_sub(1);
             }
         } else {
             self.target_period = self.sequencer.period + shift_result;
