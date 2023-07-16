@@ -257,13 +257,13 @@ impl ObjectAttributeMemory {
 
     const fn read(&self, addr: u8) -> u8 {
         let index = (addr as usize) / 4;
-        let offset = (addr as usize) - (index * 4);
+        let offset = (addr as usize) % 4;
         self.entries[index].attribs[offset]
     }
 
     fn write(&mut self, addr: u8, data: u8) {
         let index = (addr as usize) / 4;
-        let offset = (addr as usize) - (index * 4);
+        let offset = (addr as usize) % 4;
         self.entries[index].attribs[offset] = data;
     }
 }
@@ -841,7 +841,7 @@ impl Ppu {
     }
 
     pub fn cpu_read(&mut self, bus: &mut PpuBus<'_>, addr: u16) -> u8 {
-        match addr {
+        match addr & 0x7 {
             ADDR_CONTROL => 0, // Not readable
             ADDR_MASK => 0,    // Not readable
             ADDR_STATUS => {
@@ -873,7 +873,7 @@ impl Ppu {
     }
 
     pub fn cpu_write(&mut self, bus: &mut PpuBus<'_>, addr: u16, data: u8) {
-        match addr {
+        match addr & 0x7 {
             ADDR_CONTROL => {
                 self.control = PpuControl::from_bits_truncate(data);
                 self.tram_addr.nametable_x =
