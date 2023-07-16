@@ -592,6 +592,7 @@ impl Ppu {
             // 8x16 mode
             let pattern = ((sprite.id() & 0x01) as u16) << 12;
             let row = ((self.scanline as u16) - (sprite.y() as u16)) & 0x07;
+            #[allow(clippy::collapsible_else_if)]
             if sprite.attr().contains(SpriteAttributes::FLIP_VERT) {
                 if (self.scanline - (sprite.y() as i16)) < 8 {
                     // Top half
@@ -786,23 +787,23 @@ impl Ppu {
                 palette = bg_palette;
             }
 
-            if self.allow_zero_hit && zero_visible {
-                if self
+            if self.allow_zero_hit
+                && zero_visible
+                && self
                     .mask
                     .contains(PpuMask::RENDER_BACKGROUND | PpuMask::RENDER_SPRITES)
+            {
+                let start_cycle = if self
+                    .mask
+                    .contains(PpuMask::RENDER_BACKGROUND_LEFT | PpuMask::RENDER_SPRITES_LEFT)
                 {
-                    if !self
-                        .mask
-                        .contains(PpuMask::RENDER_BACKGROUND_LEFT | PpuMask::RENDER_SPRITES_LEFT)
-                    {
-                        if (self.cycle > 8) && (self.cycle < 258) {
-                            self.status.insert(PpuStatus::SPRITE_ZERO_HIT);
-                        }
-                    } else {
-                        if (self.cycle > 0) && (self.cycle < 258) {
-                            self.status.insert(PpuStatus::SPRITE_ZERO_HIT);
-                        }
-                    }
+                    0
+                } else {
+                    8
+                };
+
+                if (self.cycle > start_cycle) && (self.cycle < 258) {
+                    self.status.insert(PpuStatus::SPRITE_ZERO_HIT);
                 }
             }
         }
@@ -819,10 +820,10 @@ impl Ppu {
         if self
             .mask
             .intersects(PpuMask::RENDER_BACKGROUND | PpuMask::RENDER_SPRITES)
+            && (self.cycle == 260)
+            && (self.scanline < VBLANK_LINE)
         {
-            if (self.cycle == 260) && (self.scanline < VBLANK_LINE) {
-                bus.cart.on_scanline();
-            }
+            bus.cart.on_scanline();
         }
 
         if self.cycle > MAX_CYCLE {

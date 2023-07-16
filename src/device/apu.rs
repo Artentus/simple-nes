@@ -210,20 +210,18 @@ impl Envelope {
             self.start = false;
             self.decay_counter = 15;
             self.divider_counter = self.volume_or_reload;
-        } else {
-            if self.divider_counter == 0 {
-                self.divider_counter = self.volume_or_reload;
+        } else if self.divider_counter == 0 {
+            self.divider_counter = self.volume_or_reload;
 
-                if self.decay_counter == 0 {
-                    if self.length_counter.halt {
-                        self.decay_counter = 15;
-                    }
-                } else {
-                    self.decay_counter -= 1;
+            if self.decay_counter == 0 {
+                if self.length_counter.halt {
+                    self.decay_counter = 15;
                 }
             } else {
-                self.divider_counter -= 1;
+                self.decay_counter -= 1;
             }
+        } else {
+            self.divider_counter -= 1;
         }
     }
 }
@@ -668,10 +666,8 @@ impl DmcChannel {
                     if self.output <= 125 {
                         self.output += 2;
                     }
-                } else {
-                    if self.output >= 2 {
-                        self.output -= 2;
-                    }
+                } else if self.output >= 2 {
+                    self.output -= 2;
                 }
             }
         }

@@ -126,7 +126,7 @@ impl Mapper for Mmc1 {
     fn on_scanline(&mut self) {}
 
     fn cpu_read(&self, addr: u16) -> MapperReadResult {
-        if (addr >= 0x6000) && (addr <= 0x7FFF) {
+        if (0x6000..=0x7FFF).contains(&addr) {
             MapperReadResult::Data(self.prg_ram[(addr & 0x1FFF) as usize])
         } else if addr >= 0x8000 {
             if (self.control & 0x08) != 0 {
@@ -176,7 +176,7 @@ impl Mapper for Mmc1 {
     }
 
     fn cpu_write(&mut self, addr: u16, data: u8) {
-        if (addr >= 0x6000) && (addr <= 0x7FFF) {
+        if (0x6000..=0x7FFF).contains(&addr) {
             self.prg_ram[(addr & 0x1FFF) as usize] = data;
         } else if addr >= 0x8000 {
             if (data & 0x80) != 0 {
@@ -282,7 +282,7 @@ impl Mapper for UxRom {
     fn on_scanline(&mut self) {}
 
     fn cpu_read(&self, addr: u16) -> MapperReadResult {
-        if (addr >= 0x8000) && (addr <= 0xBFFF) {
+        if (0x8000..=0xBFFF).contains(&addr) {
             MapperReadResult::Address(Some(
                 (self.prg_bank_lo as usize) * PRG_BANK_SIZE + ((addr & 0x3FFF) as usize),
             ))
@@ -437,7 +437,7 @@ impl Mapper for Mmc3 {
     }
 
     fn cpu_read(&self, addr: u16) -> MapperReadResult {
-        if (addr >= 0x6000) && (addr <= 0x7FFF) {
+        if (0x6000..=0x7FFF).contains(&addr) {
             MapperReadResult::Data(self.prg_ram[(addr & 0x1FFF) as usize])
         } else if addr >= 0x8000 {
             let bank = ((addr >> 13) & 0x03) as usize;
@@ -462,7 +462,7 @@ impl Mapper for Mmc3 {
         const PRG_BANK_SIZE_L: usize = 0x2000;
         const CHR_BANK_SIZE_L: usize = 0x0400;
 
-        if (addr >= 0x6000) && (addr <= 0x7FFF) {
+        if (0x6000..=0x7FFF).contains(&addr) {
             self.prg_ram[(addr & 0x1FFF) as usize] = data;
         } else if addr >= 0x8000 {
             if addr <= 0x9FFF {
