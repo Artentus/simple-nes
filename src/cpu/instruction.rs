@@ -387,7 +387,7 @@ pub struct Brk<Mode: AddressingMode>(PhantomData<fn(Mode)>);
 
 instruction!(
     Brk[Implicit(7)] => |cpu, bus, _mode| {
-        cpu.push_16(bus, cpu.pc);
+        cpu.push_16(bus, cpu.pc.wrapping_add(1));
         // https://www.nesdev.org/wiki/Status_flags#The_B_flag
         cpu.push(bus, cpu.p.bits() | U_FLAG | B_FLAG);
 
