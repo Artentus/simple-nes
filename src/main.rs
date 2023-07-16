@@ -3,7 +3,7 @@ mod cpu;
 mod device;
 mod system;
 
-const SAMPLE_RATE: u32 = 44100;
+const SAMPLE_RATE: usize = 44100;
 
 type Sample = f32;
 type SampleBuffer<'a> = ringbuf::HeapProducer<Sample>;
@@ -34,7 +34,7 @@ impl rodio::Source for SampleBufferSource {
 
     #[inline]
     fn sample_rate(&self) -> u32 {
-        SAMPLE_RATE
+        SAMPLE_RATE as u32
     }
 
     #[inline]
@@ -79,8 +79,8 @@ fn main() {
     )
     .unwrap();
 
-    let sample_bufffer = ringbuf::HeapRb::<Sample>::new((SAMPLE_RATE as usize) * 5);
-    let (sample_buffer, sample_source) = sample_bufffer.split();
+    let sample_buffer = ringbuf::HeapRb::<Sample>::new(SAMPLE_RATE / 20); // Buffer can store 50ms worth of samples
+    let (sample_buffer, sample_source) = sample_buffer.split();
     let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
     stream_handle
         .play_raw(SampleBufferSource {
@@ -98,23 +98,23 @@ fn main() {
     let system_clone = Arc::clone(&system);
     let running_clone = Arc::clone(&running);
     let mut join_handle = Some(std::thread::spawn(move || {
-        use std::time::{Duration, Instant};
-
         let mut sample_buffer = sample_buffer;
         let system = system_clone;
         let running = running_clone;
 
-        let mut last_frame_time = Instant::now();
         while running.load(Ordering::Relaxed) {
-            std::thread::sleep(Duration::from_millis(1));
+            // Run emulation until we have at least 10ms worth of samples in the buffer
+            {
+                let mut system = system.lock().unwrap();
+                while sample_buffer.len() < (SAMPLE_RATE / 100) {
+                    system.clock(1000, &mut sample_buffer);
+                }
+            }
 
-            let elapsed = last_frame_time.elapsed();
-            last_frame_time = Instant::now();
-
-            system
-                .lock()
-                .unwrap()
-                .update(elapsed.as_secs_f64(), &mut sample_buffer);
+            // Idle until we have less than 5ms worth of samples in the buffer
+            while sample_buffer.len() > (SAMPLE_RATE / 200) {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
         }
     }));
 

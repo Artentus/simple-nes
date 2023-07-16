@@ -154,7 +154,6 @@ pub struct System {
     palette: Ram,
 
     cart: Cartridge,
-    fract_cycles: f64,
     even_cycle: bool,
 }
 
@@ -195,7 +194,6 @@ impl System {
             palette,
 
             cart,
-            fract_cycles: 0.0,
             even_cycle: false,
         }
     }
@@ -220,7 +218,6 @@ impl System {
 
         self.cpu.reset(&mut cpu_bus);
 
-        self.fract_cycles = 0.0;
         self.even_cycle = false;
     }
 
@@ -233,13 +230,8 @@ impl System {
         self.controller.update_state(controller_a, controller_b);
     }
 
-    pub fn update(&mut self, elapsed: f64, sample_buffer: &mut crate::SampleBuffer) {
-        const CPU_CLOCK_SPEED: f64 = 1_789_773.0;
-
-        let elapsed_cycles = (CPU_CLOCK_SPEED * elapsed) + self.fract_cycles;
-        self.fract_cycles = elapsed_cycles.fract();
-
-        for _ in 0..(elapsed_cycles as u64) {
+    pub fn clock(&mut self, cycles: usize, sample_buffer: &mut crate::SampleBuffer) {
+        for _ in 0..cycles {
             if self.dma.active {
                 if self.even_cycle {
                     let addr = u16::from_le_bytes([self.dma.addr, self.dma.page]);

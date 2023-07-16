@@ -686,7 +686,7 @@ impl DmcChannel {
     }
 }
 
-const APU_CLOCK_SPEED: f64 = 1_789_773.0 / 2.0;
+const APU_CLOCK_SPEED: f64 = 1_789_773.0 / 2.0; // CPU clock / 2 because APU only emits samples on even cycles
 const SECONDS_PER_APU_CLOCK: f64 = 1.0 / APU_CLOCK_SPEED;
 const SECONDS_PER_SAMPLE: f64 = 1.0 / (crate::SAMPLE_RATE as f64);
 
