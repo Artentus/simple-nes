@@ -836,8 +836,9 @@ impl Ppu {
     }
 
     #[inline]
-    pub fn dma_write(&mut self, addr: u8, data: u8) {
-        self.oam.write(addr, data);
+    pub fn dma_write(&mut self, data: u8) {
+        self.oam.write(self.oam_addr, data);
+        self.oam_addr = self.oam_addr.wrapping_add(1);
     }
 
     pub fn cpu_read(&mut self, bus: &mut PpuBus<'_>, addr: u16) -> u8 {
@@ -885,7 +886,7 @@ impl Ppu {
             ADDR_MASK => self.mask = PpuMask::from_bits_truncate(data),
             ADDR_STATUS => {} // Cannot write to status register
             ADDR_OAM_ADDRESS => self.oam_addr = data,
-            ADDR_OAM_DATA => self.oam.write(self.oam_addr, data),
+            ADDR_OAM_DATA => self.dma_write(data),
             ADDR_SCROLL => {
                 if self.ppu_addr_latch {
                     self.tram_addr.fine_y = (data & 0x07) as u16;

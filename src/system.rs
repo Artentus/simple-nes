@@ -248,7 +248,7 @@ impl System {
                     }
                     .read(addr);
 
-                    self.ppu.dma_write(self.dma.addr, data);
+                    self.ppu.dma_write(data);
 
                     self.dma.addr = self.dma.addr.wrapping_add(1);
                     if self.dma.addr == 0 {
