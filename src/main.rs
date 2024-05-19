@@ -319,18 +319,18 @@ fn run_emu(running: &AtomicBool, system: &Mutex<system::System>, mut sample_buff
     use std::time::Duration;
 
     while running.load(atomic::Ordering::Acquire) {
-        // Run emulation until we have at least 10ms worth of samples in the buffer
+        // Run emulation until we have at least 15ms worth of samples in the buffer
         {
             let mut system = system.lock().unwrap();
-            while sample_buffer.occupied_len() < (SAMPLE_RATE / 100) {
+            while sample_buffer.occupied_len() < (SAMPLE_RATE / 67) {
                 system.clock(1000, &mut sample_buffer);
             }
         }
 
-        // Idle until we have less than 5ms worth of samples in the buffer
-        while sample_buffer.occupied_len() > (SAMPLE_RATE / 200) {
-            thread::sleep(Duration::from_millis(1));
-        }
+        // Idle until we have less than 10ms worth of samples in the buffer
+        let available_audio_duration =
+            Duration::from_secs_f64((sample_buffer.occupied_len() as f64) / (SAMPLE_RATE as f64));
+        spin_sleep::sleep(available_audio_duration.saturating_sub(Duration::from_millis(10)));
     }
 }
 
