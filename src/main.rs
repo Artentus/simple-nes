@@ -14,7 +14,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use wgpu::{
     Adapter, BindGroup, Buffer, Device, Extent3d, ImageDataLayout, Queue, RenderPipeline, Sampler,
-    ShaderModule, Surface, Texture,
+    ShaderModule, Surface, SurfaceTexture, Texture,
 };
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -421,16 +421,10 @@ fn create_vertices(window_size: PhysicalSize<u32>) -> [Vertex; 6] {
     ]
 }
 
-fn draw(gpu_resources: &GpuResources) {
+fn draw(gpu_resources: &GpuResources, frame: SurfaceTexture) {
     use wgpu::{
         Color, CommandEncoderDescriptor, LoadOp, Operations, RenderPassColorAttachment,
-        RenderPassDescriptor, StoreOp, SurfaceError, TextureViewDescriptor,
-    };
-
-    let frame = match gpu_resources.surface.get_current_texture() {
-        Ok(frame) => frame,
-        Err(SurfaceError::Outdated) => return,
-        Err(err) => panic!("failed to aquire framebuffer: {err:?}"),
+        RenderPassDescriptor, StoreOp, TextureViewDescriptor,
     };
 
     let framebuffer = frame.texture.create_view(&TextureViewDescriptor::default());
@@ -629,6 +623,12 @@ impl ApplicationHandler for App {
 
                         resources.with_gpu_resources(|gpu_resources| {
                             if let Some(gpu_resources) = gpu_resources {
+                                let frame = match gpu_resources.surface.get_current_texture() {
+                                    Ok(frame) => frame,
+                                    Err(wgpu::SurfaceError::Outdated) => return,
+                                    Err(err) => panic!("failed to aquire framebuffer: {err:?}"),
+                                };
+
                                 gpu_resources.queue.write_texture(
                                     gpu_resources.texture.as_image_copy(),
                                     system.framebuffer(),
@@ -646,7 +646,7 @@ impl ApplicationHandler for App {
                                     )),
                                 );
 
-                                draw(gpu_resources);
+                                draw(gpu_resources, frame);
                             }
                         });
 
