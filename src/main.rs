@@ -605,6 +605,14 @@ impl ApplicationHandler for App {
                         resources.with_gpu_resources(|gpu_resources| {
                             if let Some(gpu_resources) = gpu_resources {
                                 gpu_resources.configure_surface(new_size);
+
+                                gpu_resources.queue.write_buffer(
+                                    &gpu_resources.vertex_buffer,
+                                    0,
+                                    bytemuck::cast_slice(&create_vertices(
+                                        resources.borrow_window().inner_size(),
+                                    )),
+                                );
                             }
                         });
                     }
@@ -637,15 +645,6 @@ impl ApplicationHandler for App {
                                 );
 
                                 mem::drop(system);
-
-                                gpu_resources.queue.write_buffer(
-                                    &gpu_resources.vertex_buffer,
-                                    0,
-                                    bytemuck::cast_slice(&create_vertices(
-                                        resources.borrow_window().inner_size(),
-                                    )),
-                                );
-
                                 draw(gpu_resources, frame);
                             }
                         });
