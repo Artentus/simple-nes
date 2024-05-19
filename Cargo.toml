@@ -2,14 +2,21 @@
 name = "simple-nes"
 version = "0.1.0"
 edition = "2021"
+authors = ["Mathis Rech"]
+license = "MIT"
+
+[profile.dev]
+opt-level = 1
 
 [dependencies]
-clap = { version = "4.3.11", features = ["derive"] }
-bitflags = "2.3.3"
-const-str = "0.5.6"
-winit = "0.28.6"
-pixels = "0.13.0"
-bytemuck = { version = "1.13.1", features = ["derive"] }
-rodio = { version = "0.17.1", default-features = false }
-ringbuf = "0.3.3"
-gilrs = "0.10.2"
+clap = { version = "4.5.4", features = ["derive"] }
+bitflags = "2.5.0"
+const-str = "0.5.7"
+winit = "0.30.0"
+wgpu = "0.20.0"
+bytemuck = { version = "1.16.0", features = ["derive"] }
+rodio = { version = "0.18.0", default-features = false }
+ringbuf = "0.4.1"
+gilrs = "0.10.7"
+pollster = "0.3.0"
+ouroboros = "0.18.3"

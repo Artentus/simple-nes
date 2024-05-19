@@ -748,6 +748,8 @@ impl Apu {
     }
 
     pub fn clock(&mut self, cart: &mut Cartridge, sample_buffer: &mut crate::SampleBuffer) {
+        use ringbuf::traits::Producer;
+
         self.even_cycle = !self.even_cycle;
 
         if self.even_cycle {
@@ -791,7 +793,7 @@ impl Apu {
             self.t += SECONDS_PER_APU_CLOCK;
             while self.t >= 0.0 {
                 self.t -= SECONDS_PER_SAMPLE;
-                sample_buffer.push(sample).unwrap();
+                sample_buffer.try_push(sample).unwrap();
             }
         }
     }
