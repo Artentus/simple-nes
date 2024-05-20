@@ -601,7 +601,7 @@ impl SampleReader {
                 if self.current_pos == 0 {
                     self.current_pos = DMC_WRAP_ADDRESS;
                 }
-                self.bytes_remaining -= 1;
+                self.bytes_remaining = self.bytes_remaining.wrapping_sub(1);
             }
         }
 
