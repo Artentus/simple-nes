@@ -479,7 +479,7 @@ pub struct AbsoluteOffsetXUnstable {
 
 impl Display for AbsoluteOffsetXUnstable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, " 0x{:0>4X},x", self.base_addr)
+        write!(f, " 0x{:0>4X},x **", self.base_addr)
     }
 }
 
@@ -506,12 +506,12 @@ impl AddressingMode for AbsoluteOffsetXUnstable {
 
 impl ConsumesDataUnstable for AbsoluteOffsetXUnstable {
     fn consume_data_unstable(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let actual_data = data & (((self.base_addr >> 8) + 1) as u8);
         let addr = if self.page_crossed {
-            self.abs_addr & (((data as u16) << 8) | 0xFF)
+            self.abs_addr & (((actual_data as u16) << 8) | 0xFF)
         } else {
             self.abs_addr
         };
-        let actual_data = data & ((self.abs_addr >> 8) as u8);
         bus.write(addr, actual_data)
     }
 }
@@ -551,12 +551,12 @@ impl AddressingMode for AbsoluteOffsetYUnstable {
 
 impl ConsumesDataUnstable for AbsoluteOffsetYUnstable {
     fn consume_data_unstable(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let actual_data = data & (((self.base_addr >> 8) + 1) as u8);
         let addr = if self.page_crossed {
-            self.abs_addr & (((data as u16) << 8) | 0xFF)
+            self.abs_addr & (((actual_data as u16) << 8) | 0xFF)
         } else {
             self.abs_addr
         };
-        let actual_data = data & ((self.abs_addr >> 8) as u8);
         bus.write(addr, actual_data)
     }
 }
@@ -564,6 +564,7 @@ impl ConsumesDataUnstable for AbsoluteOffsetYUnstable {
 pub struct IndirectOffsetYUnstable {
     zp_base_addr: u8,
     abs_addr: u16,
+    magic_value: u8,
     page_crossed: bool,
 }
 
@@ -591,6 +592,7 @@ impl AddressingMode for IndirectOffsetYUnstable {
             Self {
                 zp_base_addr,
                 abs_addr,
+                magic_value: high.wrapping_add(1),
                 page_crossed,
             },
             page_crossed,
@@ -600,12 +602,12 @@ impl AddressingMode for IndirectOffsetYUnstable {
 
 impl ConsumesDataUnstable for IndirectOffsetYUnstable {
     fn consume_data_unstable(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let actual_data = data & self.magic_value;
         let addr = if self.page_crossed {
-            self.abs_addr & (((data as u16) << 8) | 0xFF)
+            self.abs_addr & (((actual_data as u16) << 8) | 0xFF)
         } else {
             self.abs_addr
         };
-        let actual_data = data & ((self.abs_addr >> 8) as u8);
         bus.write(addr, actual_data)
     }
 }

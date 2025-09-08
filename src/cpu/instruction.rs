@@ -1194,6 +1194,8 @@ instruction!(
         cpu.a = result;
         cpu.x = result;
         cpu.s = result;
+        cpu.p.set(StatusFlags::Z, result == 0);
+        cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
 
         true
     }
