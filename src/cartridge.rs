@@ -744,11 +744,10 @@ impl Cartridge {
 
     /// Address is absolute, **not** relative to cartridge space
     #[inline]
-    pub fn cpu_read(&mut self, addr: u16) -> u8 {
+    pub fn cpu_read(&mut self, addr: u16) -> Option<u8> {
         match self.mapper.cpu_read(addr) {
-            MapperReadResult::Data(data) => data,
-            MapperReadResult::Address(Some(mapped_addr)) => self.prg_rom[mapped_addr],
-            _ => 0,
+            MapperReadResult::Data(data) => Some(data),
+            MapperReadResult::Address(addr) => addr.map(|addr| self.prg_rom[addr]),
         }
     }
 

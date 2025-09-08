@@ -16,6 +16,15 @@ pub trait ConsumesData: AddressingMode {
     fn consume_data(&self, cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8);
 }
 
+pub trait ModifiesData: AddressingMode {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8);
+}
+
 pub trait ProducesAddress: AddressingMode {
     fn produce_address(&self, cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> u16;
 }
@@ -29,7 +38,8 @@ impl Display for Implicit {
 }
 
 impl AddressingMode for Implicit {
-    fn decode(_cpu: &mut Cpu, _bus: &mut CpuBus<'_>) -> (Self, bool) {
+    fn decode(cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> (Self, bool) {
+        let _ = bus.read(cpu.pc); // dummy read
         (Self, false)
     }
 }
@@ -43,7 +53,8 @@ impl Display for Accumulator {
 }
 
 impl AddressingMode for Accumulator {
-    fn decode(_cpu: &mut Cpu, _bus: &mut CpuBus<'_>) -> (Self, bool) {
+    fn decode(cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> (Self, bool) {
+        let _ = bus.read(cpu.pc); // dummy read
         (Self, false)
     }
 }
@@ -57,6 +68,20 @@ impl ProducesData for Accumulator {
 impl ConsumesData for Accumulator {
     fn consume_data(&self, cpu: &mut Cpu, _bus: &mut CpuBus<'_>, data: u8) {
         cpu.a = data;
+    }
+}
+
+impl ModifiesData for Accumulator {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        cpu: &mut Cpu,
+        _bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let old_value = cpu.a;
+        let new_value = f(old_value);
+        cpu.a = new_value;
+        (old_value, new_value)
     }
 }
 
@@ -116,6 +141,21 @@ impl ConsumesData for ZeroPage {
     }
 }
 
+impl ModifiesData for ZeroPage {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        _cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let old_value = bus.read(self.zp_addr as u16);
+        let new_value = f(old_value);
+        bus.write(self.zp_addr as u16, old_value); // dummy write
+        bus.write(self.zp_addr as u16, new_value);
+        (old_value, new_value)
+    }
+}
+
 pub struct ZeroPageOffsetX {
     base_addr: u8,
     zp_addr: u8,
@@ -139,13 +179,31 @@ impl AddressingMode for ZeroPageOffsetX {
 
 impl ProducesData for ZeroPageOffsetX {
     fn produce_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> u8 {
+        let _ = bus.read(self.base_addr as u16); // dummy read
         bus.read(self.zp_addr as u16)
     }
 }
 
 impl ConsumesData for ZeroPageOffsetX {
     fn consume_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let _ = bus.read(self.base_addr as u16); // dummy read
         bus.write(self.zp_addr as u16, data)
+    }
+}
+
+impl ModifiesData for ZeroPageOffsetX {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        _cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let _ = bus.read(self.base_addr as u16); // dummy read
+        let old_value = bus.read(self.zp_addr as u16);
+        let new_value = f(old_value);
+        bus.write(self.zp_addr as u16, old_value); // dummy write
+        bus.write(self.zp_addr as u16, new_value);
+        (old_value, new_value)
     }
 }
 
@@ -172,13 +230,31 @@ impl AddressingMode for ZeroPageOffsetY {
 
 impl ProducesData for ZeroPageOffsetY {
     fn produce_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> u8 {
+        let _ = bus.read(self.base_addr as u16); // dummy read
         bus.read(self.zp_addr as u16)
     }
 }
 
 impl ConsumesData for ZeroPageOffsetY {
     fn consume_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let _ = bus.read(self.base_addr as u16); // dummy read
         bus.write(self.zp_addr as u16, data)
+    }
+}
+
+impl ModifiesData for ZeroPageOffsetY {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        _cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let _ = bus.read(self.base_addr as u16); // dummy read
+        let old_value = bus.read(self.zp_addr as u16);
+        let new_value = f(old_value);
+        bus.write(self.zp_addr as u16, old_value); // dummy write
+        bus.write(self.zp_addr as u16, new_value);
+        (old_value, new_value)
     }
 }
 
@@ -197,6 +273,7 @@ impl AddressingMode for Relative {
     fn decode(cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> (Self, bool) {
         let offset = bus.read(cpu.pc) as i8;
         cpu.pc = cpu.pc.wrapping_add(1);
+        let _ = bus.read(cpu.pc) as i8; // dummy read
 
         let base_addr = cpu.pc;
         let abs_addr = base_addr.wrapping_add_signed(offset as i16);
@@ -246,6 +323,21 @@ impl ConsumesData for Absolute {
     }
 }
 
+impl ModifiesData for Absolute {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        _cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let old_value = bus.read(self.abs_addr);
+        let new_value = f(old_value);
+        bus.write(self.abs_addr, old_value); // dummy write
+        bus.write(self.abs_addr, new_value);
+        (old_value, new_value)
+    }
+}
+
 impl ProducesAddress for Absolute {
     fn produce_address(&self, _cpu: &mut Cpu, _bus: &mut CpuBus<'_>) -> u16 {
         self.abs_addr
@@ -255,6 +347,7 @@ impl ProducesAddress for Absolute {
 pub struct AbsoluteOffsetX {
     base_addr: u16,
     abs_addr: u16,
+    page_crossed: bool,
 }
 
 impl Display for AbsoluteOffsetX {
@@ -277,6 +370,7 @@ impl AddressingMode for AbsoluteOffsetX {
             Self {
                 base_addr,
                 abs_addr,
+                page_crossed,
             },
             page_crossed,
         )
@@ -285,19 +379,42 @@ impl AddressingMode for AbsoluteOffsetX {
 
 impl ProducesData for AbsoluteOffsetX {
     fn produce_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> u8 {
+        if self.page_crossed {
+            // dummy read
+            let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF));
+        }
+
         bus.read(self.abs_addr)
     }
 }
 
 impl ConsumesData for AbsoluteOffsetX {
     fn consume_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF)); // dummy read
         bus.write(self.abs_addr, data)
+    }
+}
+
+impl ModifiesData for AbsoluteOffsetX {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        _cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF)); // dummy read
+        let old_value = bus.read(self.abs_addr);
+        let new_value = f(old_value);
+        bus.write(self.abs_addr, old_value); // dummy write
+        bus.write(self.abs_addr, new_value);
+        (old_value, new_value)
     }
 }
 
 pub struct AbsoluteOffsetY {
     base_addr: u16,
     abs_addr: u16,
+    page_crossed: bool,
 }
 
 impl Display for AbsoluteOffsetY {
@@ -320,6 +437,7 @@ impl AddressingMode for AbsoluteOffsetY {
             Self {
                 base_addr,
                 abs_addr,
+                page_crossed,
             },
             page_crossed,
         )
@@ -328,13 +446,35 @@ impl AddressingMode for AbsoluteOffsetY {
 
 impl ProducesData for AbsoluteOffsetY {
     fn produce_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> u8 {
+        if self.page_crossed {
+            // dummy read
+            let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF));
+        }
+
         bus.read(self.abs_addr)
     }
 }
 
 impl ConsumesData for AbsoluteOffsetY {
     fn consume_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF)); // dummy read
         bus.write(self.abs_addr, data)
+    }
+}
+
+impl ModifiesData for AbsoluteOffsetY {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        _cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF)); // dummy read
+        let old_value = bus.read(self.abs_addr);
+        let new_value = f(old_value);
+        bus.write(self.abs_addr, old_value); // dummy write
+        bus.write(self.abs_addr, new_value);
+        (old_value, new_value)
     }
 }
 
@@ -392,6 +532,7 @@ impl AddressingMode for OffsetXIndirect {
         let zp_ind_addr = zp_base_addr.wrapping_add(cpu.x);
         cpu.pc = cpu.pc.wrapping_add(1);
 
+        let _ = bus.read(zp_base_addr as u16); // dummy read
         let low = bus.read(zp_ind_addr as u16);
         let high = bus.read(zp_ind_addr.wrapping_add(1) as u16);
         let abs_addr = u16::from_le_bytes([low, high]);
@@ -418,9 +559,26 @@ impl ConsumesData for OffsetXIndirect {
     }
 }
 
+impl ModifiesData for OffsetXIndirect {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        _cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let old_value = bus.read(self.abs_addr);
+        let new_value = f(old_value);
+        bus.write(self.abs_addr, old_value); // dummy write
+        bus.write(self.abs_addr, new_value);
+        (old_value, new_value)
+    }
+}
+
 pub struct IndirectOffsetY {
     zp_base_addr: u8,
+    base_addr: u16,
     abs_addr: u16,
+    page_crossed: bool,
 }
 
 impl Display for IndirectOffsetY {
@@ -446,7 +604,9 @@ impl AddressingMode for IndirectOffsetY {
         (
             Self {
                 zp_base_addr,
+                base_addr,
                 abs_addr,
+                page_crossed,
             },
             page_crossed,
         )
@@ -455,13 +615,35 @@ impl AddressingMode for IndirectOffsetY {
 
 impl ProducesData for IndirectOffsetY {
     fn produce_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> u8 {
+        if self.page_crossed {
+            // dummy read
+            let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF));
+        }
+
         bus.read(self.abs_addr)
     }
 }
 
 impl ConsumesData for IndirectOffsetY {
     fn consume_data(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF)); // dummy read
         bus.write(self.abs_addr, data);
+    }
+}
+
+impl ModifiesData for IndirectOffsetY {
+    fn modify_data<F: FnOnce(u8) -> u8>(
+        &self,
+        _cpu: &mut Cpu,
+        bus: &mut CpuBus<'_>,
+        f: F,
+    ) -> (u8, u8) {
+        let _ = bus.read((self.base_addr & 0xFF00) | (self.abs_addr & 0x00FF)); // dummy read
+        let old_value = bus.read(self.abs_addr);
+        let new_value = f(old_value);
+        bus.write(self.abs_addr, old_value); // dummy write
+        bus.write(self.abs_addr, new_value);
+        (old_value, new_value)
     }
 }
 

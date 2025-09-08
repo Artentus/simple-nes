@@ -596,7 +596,7 @@ impl SampleReader {
                     }
                 }
 
-                self.current = cart.cpu_read(self.current_pos);
+                self.current = cart.cpu_read(self.current_pos).unwrap_or_default();
                 self.current_pos = self.current_pos.wrapping_add(1);
                 if self.current_pos == 0 {
                     self.current_pos = DMC_WRAP_ADDRESS;

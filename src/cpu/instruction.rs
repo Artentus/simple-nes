@@ -11,10 +11,12 @@ pub trait Instruction {
     const AFFECTED_BY_PAGE_CROSS: bool;
     const NAME: &'static str;
 
+    fn pre_execute(_cpu: &mut Cpu, _bus: &mut CpuBus<'_>) {}
     fn execute(cpu: &mut Cpu, bus: &mut CpuBus<'_>, mode: Self::Mode) -> bool;
 }
 
 pub fn execute<I: Instruction>(cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> u8 {
+    I::pre_execute(cpu, bus);
     let (mode, page_crossed) = I::Mode::decode(cpu, bus);
     let branch_taken = I::execute(cpu, bus, mode);
 
@@ -33,6 +35,24 @@ macro_rules! instruction {
                 const CYCLE_COUNT: u8 = instruction!(@CYCLE_COUNT $($cycles)+);
                 const AFFECTED_BY_PAGE_CROSS: bool = instruction!(@PAGE_CROSS $($cycles)+);
                 const NAME: &'static str = const_str::convert_ascii_case!(lower, stringify!($instr));
+
+                fn execute($cpu: &mut Cpu, $bus: &mut CpuBus<'_>, $mode: Self::Mode) -> bool {
+                    $execute
+                }
+            }
+        )+
+    };
+    ($instr:ident[$($mode_ty:ident($($cycles:tt)+)),+ $(,)?] => |$pre_cpu:ident, $pre_bus:ident| $pre_execute:expr => |$cpu:ident, $bus:ident, $mode:ident| $execute:expr) => {
+        $(
+            impl Instruction for $instr<$mode_ty> {
+                type Mode = $mode_ty;
+                const CYCLE_COUNT: u8 = instruction!(@CYCLE_COUNT $($cycles)+);
+                const AFFECTED_BY_PAGE_CROSS: bool = instruction!(@PAGE_CROSS $($cycles)+);
+                const NAME: &'static str = const_str::convert_ascii_case!(lower, stringify!($instr));
+
+                fn pre_execute($pre_cpu: &mut Cpu, $pre_bus: &mut CpuBus<'_>) {
+                    $pre_execute
+                }
 
                 fn execute($cpu: &mut Cpu, $bus: &mut CpuBus<'_>, $mode: Self::Mode) -> bool {
                     $execute
@@ -185,7 +205,7 @@ instruction!(
     }
 );
 
-pub struct Asl<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Asl<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Asl[
@@ -195,9 +215,7 @@ instruction!(
         Absolute(6),
         AbsoluteOffsetX(7),
     ] => |cpu, bus, mode| {
-        let lhs = mode.produce_data(cpu, bus);
-        let result = lhs << 1;
-        mode.consume_data(cpu, bus, result);
+        let (lhs, result) = mode.modify_data(cpu, bus, |lhs| lhs << 1);
 
         cpu.p.set(StatusFlags::C, (lhs & 0x80) != 0);
         cpu.p.set(StatusFlags::Z, result == 0);
@@ -207,7 +225,7 @@ instruction!(
     }
 );
 
-pub struct Lsr<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Lsr<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Lsr[
@@ -217,9 +235,7 @@ instruction!(
         Absolute(6),
         AbsoluteOffsetX(7),
     ] => |cpu, bus, mode| {
-        let lhs = mode.produce_data(cpu, bus);
-        let result = lhs >> 1;
-        mode.consume_data(cpu, bus, result);
+        let (lhs, result) = mode.modify_data(cpu, bus, |lhs| lhs >> 1);
 
         cpu.p.set(StatusFlags::C, (lhs & 0x01) != 0);
         cpu.p.set(StatusFlags::Z, result == 0);
@@ -229,7 +245,7 @@ instruction!(
     }
 );
 
-pub struct Rol<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Rol<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Rol[
@@ -239,9 +255,8 @@ instruction!(
         Absolute(6),
         AbsoluteOffsetX(7),
     ] => |cpu, bus, mode| {
-        let lhs = mode.produce_data(cpu, bus);
-        let result = (lhs << 1) | (cpu.p.contains(StatusFlags::C) as u8);
-        mode.consume_data(cpu, bus, result);
+        let carry = cpu.p.contains(StatusFlags::C) as u8;
+        let (lhs, result) = mode.modify_data(cpu, bus, |lhs| (lhs << 1) | carry);
 
         cpu.p.set(StatusFlags::C, (lhs & 0x80) != 0);
         cpu.p.set(StatusFlags::Z, result == 0);
@@ -251,7 +266,7 @@ instruction!(
     }
 );
 
-pub struct Ror<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Ror<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Ror[
@@ -261,9 +276,8 @@ instruction!(
         Absolute(6),
         AbsoluteOffsetX(7),
     ] => |cpu, bus, mode| {
-        let lhs = mode.produce_data(cpu, bus);
-        let result = (lhs >> 1) | ((cpu.p.contains(StatusFlags::C) as u8) << 7);
-        mode.consume_data(cpu, bus, result);
+        let carry = (cpu.p.contains(StatusFlags::C) as u8) << 7;
+        let (lhs, result) = mode.modify_data(cpu, bus, |lhs| (lhs >> 1) | carry);
 
         cpu.p.set(StatusFlags::C, (lhs & 0x01) != 0);
         cpu.p.set(StatusFlags::Z, result == 0);
@@ -526,7 +540,7 @@ instruction!(
     }
 );
 
-pub struct Inc<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Inc<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Inc[
@@ -535,8 +549,7 @@ instruction!(
         Absolute(6),
         AbsoluteOffsetX(7),
     ] => |cpu, bus, mode| {
-        let result = mode.produce_data(cpu, bus).wrapping_add(1);
-        mode.consume_data(cpu, bus, result);
+        let (_, result) = mode.modify_data(cpu, bus, |lhs| lhs.wrapping_add(1));
 
         cpu.p.set(StatusFlags::Z, result == 0);
         cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
@@ -569,7 +582,7 @@ instruction!(
     }
 );
 
-pub struct Dec<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Dec<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Dec[
@@ -578,8 +591,7 @@ instruction!(
         Absolute(6),
         AbsoluteOffsetX(7),
     ] => |cpu, bus, mode| {
-        let result = mode.produce_data(cpu, bus).wrapping_sub(1);
-        mode.consume_data(cpu, bus, result);
+        let (_, result) = mode.modify_data(cpu, bus, |lhs| lhs.wrapping_sub(1));
 
         cpu.p.set(StatusFlags::Z, result == 0);
         cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
@@ -624,8 +636,11 @@ instruction!(
 pub struct Jsr<Mode: ProducesAddress>(PhantomData<fn(Mode)>);
 
 instruction!(
-    Jsr[Absolute(6)] => |cpu, bus, mode| {
-        cpu.push_16(bus, cpu.pc.wrapping_sub(1));
+    Jsr[Absolute(6)]
+    => |cpu, bus| {
+        cpu.push_16(bus, cpu.pc.wrapping_add(1));
+    }
+    => |cpu, bus, mode| {
         cpu.pc = mode.produce_address(cpu, bus);
         false
     }
@@ -878,7 +893,7 @@ instruction!(
     }
 );
 
-pub struct Dcp<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Dcp<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Dcp[
@@ -890,9 +905,8 @@ instruction!(
         OffsetXIndirect(8),
         IndirectOffsetY(8),
     ] => |cpu, bus, mode| {
-        let value = mode.produce_data(cpu, bus).wrapping_sub(1);
+        let (_, value) = mode.modify_data(cpu, bus, |value| value.wrapping_sub(1));
         cpu.p.set(StatusFlags::C, cpu.a >= value);
-        mode.consume_data(cpu, bus, value);
 
         let tmp = cpu.a.wrapping_sub(value);
         cpu.p.set(StatusFlags::Z, tmp == 0);
@@ -902,7 +916,7 @@ instruction!(
     }
 );
 
-pub struct Isb<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Isb<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Isb[
@@ -943,7 +957,7 @@ instruction!(
     }
 );
 
-pub struct Rla<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Rla<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Rla[
@@ -955,10 +969,9 @@ instruction!(
         OffsetXIndirect(8),
         IndirectOffsetY(8),
     ] => |cpu, bus, mode| {
-        let value = mode.produce_data(cpu, bus);
-        let new_value = (value << 1) | (cpu.p.contains(StatusFlags::C) as u8);
+        let carry = cpu.p.contains(StatusFlags::C) as u8;
+        let (value, new_value) = mode.modify_data(cpu, bus, |value| (value << 1) | carry);
         cpu.p.set(StatusFlags::C, (value & 0x80) != 0);
-        mode.consume_data(cpu, bus, new_value);
 
         cpu.a &= new_value;
         cpu.p.set(StatusFlags::Z, cpu.a == 0);
@@ -968,7 +981,7 @@ instruction!(
     }
 );
 
-pub struct Rra<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Rra<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Rra[
@@ -980,10 +993,10 @@ instruction!(
         OffsetXIndirect(8),
         IndirectOffsetY(8),
     ] => |cpu, bus, mode| {
-        let value = mode.produce_data(cpu, bus);
-        let new_value = (value >> 1) | ((cpu.p.contains(StatusFlags::C) as u8) << 7);
+        let carry = (cpu.p.contains(StatusFlags::C) as u8) << 7;
+        let (value, new_value) = mode.modify_data(cpu, bus, |value| (value >> 1) | carry);
         cpu.p.set(StatusFlags::C, (value & 0x01) != 0);
-        mode.consume_data(cpu, bus, new_value);
+
         execute_add(cpu, new_value);
 
         false
@@ -1004,7 +1017,7 @@ instruction!(
     }
 );
 
-pub struct Slo<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Slo<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Slo[
@@ -1016,13 +1029,10 @@ instruction!(
         OffsetXIndirect(8),
         IndirectOffsetY(8),
     ] => |cpu, bus, mode| {
-        let value = mode.produce_data(cpu, bus);
+        let (value, new_value) = mode.modify_data(cpu, bus, |value| value << 1);
         cpu.p.set(StatusFlags::C, (value & 0x80) != 0);
 
-        let tmp = value << 1;
-        mode.consume_data(cpu, bus, tmp);
-
-        cpu.a |= tmp;
+        cpu.a |= new_value;
         cpu.p.set(StatusFlags::Z, cpu.a == 0);
         cpu.p.set(StatusFlags::N, (cpu.a & 0x80) != 0);
 
@@ -1030,7 +1040,7 @@ instruction!(
     }
 );
 
-pub struct Sre<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
+pub struct Sre<Mode: ModifiesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Sre[

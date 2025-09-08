@@ -354,6 +354,7 @@ pub struct Ppu {
     sprite_pattern_lo: [u8; 8],
     sprite_pattern_hi: [u8; 8],
     allow_zero_hit: bool,
+    last_bus_value: u8, // PPU open bus
 }
 
 impl Ppu {
@@ -370,7 +371,7 @@ impl Ppu {
             mask: PpuMask::empty(),
             status: PpuStatus::empty(),
             ppu_addr_latch: false,
-            ppu_data_buffer: 0,
+            ppu_data_buffer: 0xFF,
             nmi: false,
             vram_addr: PpuRegister::new(),
             tram_addr: PpuRegister::new(),
@@ -389,6 +390,7 @@ impl Ppu {
             sprite_pattern_lo: [0; 8],
             sprite_pattern_hi: [0; 8],
             allow_zero_hit: false,
+            last_bus_value: 0xFF,
         }
     }
 
@@ -400,7 +402,7 @@ impl Ppu {
     pub fn reset(&mut self) {
         self.fine_x = 0;
         self.ppu_addr_latch = false;
-        self.ppu_data_buffer = 0;
+        self.ppu_data_buffer = 0xFF;
         self.scanline = 0;
         self.cycle = 0;
         self.bg_next_id = 0;
@@ -416,6 +418,7 @@ impl Ppu {
         self.control = PpuControl::empty();
         self.vram_addr = PpuRegister::new();
         self.tram_addr = PpuRegister::new();
+        self.last_bus_value = 0xFF;
     }
 
     pub fn check_nmi(&mut self) -> bool {
@@ -844,19 +847,24 @@ impl Ppu {
 
     pub fn cpu_read(&mut self, bus: &mut PpuBus<'_>, addr: u16) -> u8 {
         match addr & 0x7 {
-            ADDR_CONTROL => 0, // Not readable
-            ADDR_MASK => 0,    // Not readable
+            ADDR_CONTROL => self.last_bus_value, // Not readable
+            ADDR_MASK => self.last_bus_value,    // Not readable
             ADDR_STATUS => {
-                // The unused bytes contain the last buffer data on real hardware
-                let tmp = (self.status.bits() & 0xE0) | (self.ppu_data_buffer & 0x1F);
+                let tmp = (self.status.bits() & 0xE0) | (self.last_bus_value & 0x1F);
                 self.status.remove(PpuStatus::VERTICAL_BLANK);
                 self.ppu_addr_latch = false;
+
+                self.last_bus_value = tmp;
                 tmp
             }
             ADDR_OAM_ADDRESS => 0, // Not readable
-            ADDR_OAM_DATA => self.oam.read(self.oam_addr),
-            ADDR_SCROLL => 0,      // Not readable
-            ADDR_PPU_ADDRESS => 0, // Not readable
+            ADDR_OAM_DATA => {
+                let value = self.oam.read(self.oam_addr);
+                self.last_bus_value = value;
+                value
+            }
+            ADDR_SCROLL => self.last_bus_value, // Not readable
+            ADDR_PPU_ADDRESS => self.last_bus_value, // Not readable
             ADDR_PPU_DATA => {
                 // Everything except palette data is buffered one cycle
                 let mut tmp = self.ppu_data_buffer;
@@ -868,13 +876,17 @@ impl Ppu {
                 self.vram_addr.value +=
                     select(self.control.contains(PpuControl::INCREMENT_MODE), 32, 1);
                 self.vram_addr.update_subfields();
+
+                self.last_bus_value = tmp;
                 tmp
             }
-            _ => 0,
+            _ => self.last_bus_value,
         }
     }
 
     pub fn cpu_write(&mut self, bus: &mut PpuBus<'_>, addr: u16, data: u8) {
+        self.last_bus_value = data;
+
         match addr & 0x7 {
             ADDR_CONTROL => {
                 self.control = PpuControl::from_bits_truncate(data);

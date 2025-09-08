@@ -89,11 +89,13 @@ pub struct CpuBus<'a> {
 
     pub vram: &'a mut Vram,
     pub palette: &'a mut Ram,
+
+    last_bus_value: &'a mut u8,
 }
 
 impl CpuBus<'_> {
     pub fn read(&mut self, addr: u16) -> u8 {
-        match addr {
+        let value = match addr {
             RAM_START..=RAM_END => self.ram.read(addr - RAM_START),
             PPU_START..=PPU_END => {
                 let mut ppu_bus = PpuBus {
@@ -103,15 +105,24 @@ impl CpuBus<'_> {
                 };
                 self.ppu.cpu_read(&mut ppu_bus, addr - PPU_START)
             }
-            APU_STATUS_CONTROL => self.apu.read_status(),
-            CONTROLLER_A => self.controller.read(ControllerPort::PortA),
-            CONTROLLER_B => self.controller.read(ControllerPort::PortB),
-            PRG_START..=PRG_END => self.cart.cpu_read(addr),
-            _ => 0,
-        }
+            APU_STATUS_CONTROL => (self.apu.read_status() & 0xDF) | (*self.last_bus_value & 0x20),
+            CONTROLLER_A => {
+                (self.controller.read(ControllerPort::PortA) & 0x1F) | (*self.last_bus_value & 0xE0)
+            }
+            CONTROLLER_B => {
+                (self.controller.read(ControllerPort::PortB) & 0x1F) | (*self.last_bus_value & 0xE0)
+            }
+            PRG_START..=PRG_END => self.cart.cpu_read(addr).unwrap_or(*self.last_bus_value),
+            _ => *self.last_bus_value,
+        };
+
+        *self.last_bus_value = value;
+        value
     }
 
     pub fn write(&mut self, addr: u16, data: u8) {
+        *self.last_bus_value = data;
+
         match addr {
             RAM_START..=RAM_END => self.ram.write(addr - RAM_START, data),
             PPU_START..=PPU_END => {
@@ -155,6 +166,7 @@ pub struct System {
 
     cart: Cartridge,
     even_cycle: bool,
+    last_bus_value: u8, // to emulate open bus
 }
 
 impl System {
@@ -168,6 +180,8 @@ impl System {
         let mut dma = Dma::new();
         let mut controller = Controller::new();
 
+        let mut last_bus_value = 0xFF;
+
         let mut cpu_bus = CpuBus {
             ram: &mut ram,
             ppu: &mut ppu,
@@ -178,6 +192,8 @@ impl System {
 
             vram: &mut vram,
             palette: &mut palette,
+
+            last_bus_value: &mut last_bus_value,
         };
 
         let cpu = Cpu::new(&mut cpu_bus);
@@ -195,6 +211,7 @@ impl System {
 
             cart,
             even_cycle: false,
+            last_bus_value,
         }
     }
 
@@ -203,6 +220,8 @@ impl System {
         self.cart.reset_mapper();
         self.ppu.reset();
         self.apu.reset();
+
+        self.last_bus_value = 0xFF;
 
         let mut cpu_bus = CpuBus {
             ram: &mut self.ram,
@@ -214,6 +233,8 @@ impl System {
 
             vram: &mut self.vram,
             palette: &mut self.palette,
+
+            last_bus_value: &mut self.last_bus_value,
         };
 
         self.cpu.reset(&mut cpu_bus);
@@ -245,6 +266,8 @@ impl System {
 
                         vram: &mut self.vram,
                         palette: &mut self.palette,
+
+                        last_bus_value: &mut self.last_bus_value,
                     }
                     .read(addr);
 
@@ -266,6 +289,8 @@ impl System {
 
                     vram: &mut self.vram,
                     palette: &mut self.palette,
+
+                    last_bus_value: &mut self.last_bus_value,
                 };
 
                 self.cpu.clock(&mut cpu_bus);
