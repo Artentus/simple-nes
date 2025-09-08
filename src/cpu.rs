@@ -163,7 +163,7 @@ impl Cpu {
                     0x08 => Php<Implicit>,
                     0x09 => Ora<Immediate>,
                     0x0A => Asl<Accumulator>,
-                    // 0x0B
+                    0x0B => Anc<Immediate>,
                     0x0C => Nop<Absolute>,
                     0x0D => Ora<Absolute>,
                     0x0E => Asl<Absolute>,
@@ -197,7 +197,7 @@ impl Cpu {
                     0x28 => Plp<Implicit>,
                     0x29 => And<Immediate>,
                     0x2A => Rol<Accumulator>,
-                    // 0x2B
+                    0x2B => Anc<Immediate>,
                     0x2C => Bit<Absolute>,
                     0x2D => And<Absolute>,
                     0x2E => Rol<Absolute>,
@@ -231,7 +231,7 @@ impl Cpu {
                     0x48 => Pha<Implicit>,
                     0x49 => Eor<Immediate>,
                     0x4A => Lsr<Accumulator>,
-                    // 0x4B
+                    0x4B => Alr<Immediate>,
                     0x4C => Jmp<Absolute>,
                     0x4D => Eor<Absolute>,
                     0x4E => Lsr<Absolute>,
@@ -265,7 +265,7 @@ impl Cpu {
                     0x68 => Pla<Implicit>,
                     0x69 => Adc<Immediate>,
                     0x6A => Ror<Accumulator>,
-                    // 0x6B
+                    0x6B => Arr<Immediate>,
                     0x6C => Jmp<Indirect>,
                     0x6D => Adc<Absolute>,
                     0x6E => Ror<Absolute>,
@@ -299,7 +299,7 @@ impl Cpu {
                     0x88 => Dey<Implicit>,
                     0x89 => Nop<Immediate>,
                     0x8A => Txa<Implicit>,
-                    // 0x8B
+                    0x8B => Ane<Immediate>,
                     0x8C => Sty<Absolute>,
                     0x8D => Sta<Absolute>,
                     0x8E => Stx<Absolute>,
@@ -308,7 +308,7 @@ impl Cpu {
                     0x90 => Bcc<Relative>,
                     0x91 => Sta<IndirectOffsetY>,
                     // 0x92
-                    // 0x93
+                    0x93 => Sha<IndirectOffsetYUnstable>,
                     0x94 => Sty<ZeroPageOffsetX>,
                     0x95 => Sta<ZeroPageOffsetX>,
                     0x96 => Stx<ZeroPageOffsetY>,
@@ -316,11 +316,11 @@ impl Cpu {
                     0x98 => Tya<Implicit>,
                     0x99 => Sta<AbsoluteOffsetY>,
                     0x9A => Txs<Implicit>,
-                    // 0x9B
-                    // 0x9C
+                    0x9B => Tas<AbsoluteOffsetYUnstable>,
+                    0x9C => Shy<AbsoluteOffsetXUnstable>,
                     0x9D => Sta<AbsoluteOffsetX>,
-                    // 0x9E
-                    // 0x9F
+                    0x9E => Shx<AbsoluteOffsetYUnstable>,
+                    0x9F => Sha<AbsoluteOffsetYUnstable>,
                     // --------------------------------
                     0xA0 => Ldy<Immediate>,
                     0xA1 => Lda<OffsetXIndirect>,
@@ -333,7 +333,7 @@ impl Cpu {
                     0xA8 => Tay<Implicit>,
                     0xA9 => Lda<Immediate>,
                     0xAA => Tax<Implicit>,
-                    // 0xAB
+                    0xAB => Lxa<Immediate>,
                     0xAC => Ldy<Absolute>,
                     0xAD => Lda<Absolute>,
                     0xAE => Ldx<Absolute>,
@@ -350,7 +350,7 @@ impl Cpu {
                     0xB8 => Clv<Implicit>,
                     0xB9 => Lda<AbsoluteOffsetY>,
                     0xBA => Tsx<Implicit>,
-                    // 0xBB
+                    0xBB => Las<AbsoluteOffsetY>,
                     0xBC => Ldy<AbsoluteOffsetX>,
                     0xBD => Lda<AbsoluteOffsetX>,
                     0xBE => Ldx<AbsoluteOffsetY>,
@@ -367,7 +367,7 @@ impl Cpu {
                     0xC8 => Iny<Implicit>,
                     0xC9 => Cmp<Immediate>,
                     0xCA => Dex<Implicit>,
-                    // 0xCB
+                    0xCB => Sbx<Immediate>,
                     0xCC => Cpy<Absolute>,
                     0xCD => Cmp<Absolute>,
                     0xCE => Dec<Absolute>,

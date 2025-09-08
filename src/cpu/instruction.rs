@@ -862,14 +862,20 @@ instruction!(
 // Undocumented/illegal instructions
 // https://www.masswerk.at/nowgobang/2021/6502-illegal-opcodes
 
+instruction!(Nop[Immediate(2)] => |_cpu, _bus, _mode| false);
+
 instruction!(
     Nop[
-        Immediate(2),
         ZeroPage(3),
         ZeroPageOffsetX(4),
         Absolute(4),
         AbsoluteOffsetX(4+),
-    ] => |_cpu, _bus, _mode| false
+    ] => |cpu, bus, mode| {
+        // dummy read
+        let _ = mode.produce_data(cpu, bus);
+
+        false
+    }
 );
 
 pub struct Dcp<Mode: ProducesData + ConsumesData>(PhantomData<fn(Mode)>);
@@ -1045,6 +1051,166 @@ instruction!(
         cpu.a ^= tmp;
         cpu.p.set(StatusFlags::Z, cpu.a == 0);
         cpu.p.set(StatusFlags::N, (cpu.a & 0x80) != 0);
+
+        false
+    }
+);
+
+pub struct Anc<Mode: ProducesData>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Anc[Immediate(2)] => |cpu, bus, mode| {
+        let lhs = cpu.a;
+        let rhs = mode.produce_data(cpu, bus);
+        let result = lhs & rhs;
+
+        cpu.a = result;
+        cpu.p.set(StatusFlags::C, (lhs & 0x80) != 0);
+        cpu.p.set(StatusFlags::Z, result == 0);
+        cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
+
+        false
+    }
+);
+
+pub struct Alr<Mode: ProducesData>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Alr[Immediate(2)] => |cpu, bus, mode| {
+        let lhs = cpu.a;
+        let rhs = mode.produce_data(cpu, bus);
+        let and_result = lhs & rhs;
+        let result = and_result >> 1;
+
+        cpu.a = result;
+        cpu.p.set(StatusFlags::C, (and_result & 0x01) != 0);
+        cpu.p.set(StatusFlags::Z, result == 0);
+        cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
+
+        false
+    }
+);
+
+pub struct Arr<Mode: ProducesData>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Arr[Immediate(2)] => |cpu, bus, mode| {
+        let lhs = cpu.a;
+        let rhs = mode.produce_data(cpu, bus);
+        let and_result = lhs & rhs;
+        let result = (and_result >> 1) | ((cpu.p.contains(StatusFlags::C) as u8) << 7);
+
+        cpu.a = result;
+        cpu.p.set(StatusFlags::C, (and_result & 0x01) != 0);
+        cpu.p.set(StatusFlags::Z, result == 0);
+        cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
+
+        false
+    }
+);
+
+pub struct Ane<Mode: ProducesData>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Ane[Immediate(2)] => |cpu, bus, mode| {
+        let rhs = mode.produce_data(cpu, bus);
+        let result = cpu.a & cpu.x & rhs;
+
+        cpu.a = result;
+        cpu.p.set(StatusFlags::Z, result == 0);
+        cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
+
+        false
+    }
+);
+
+pub struct Sha<Mode: ConsumesDataUnstable>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Sha[
+        AbsoluteOffsetYUnstable(5),
+        IndirectOffsetYUnstable(6),
+    ] => |cpu, bus, mode| {
+        mode.consume_data_unstable(cpu, bus, cpu.a & cpu.x);
+
+        false
+    }
+);
+
+pub struct Shx<Mode: ConsumesDataUnstable>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Shx[AbsoluteOffsetYUnstable(5)] => |cpu, bus, mode| {
+        mode.consume_data_unstable(cpu, bus, cpu.x);
+
+        false
+    }
+);
+
+pub struct Shy<Mode: ConsumesDataUnstable>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Shy[AbsoluteOffsetXUnstable(5)] => |cpu, bus, mode| {
+        mode.consume_data_unstable(cpu, bus, cpu.y);
+
+        false
+    }
+);
+
+pub struct Tas<Mode: ConsumesDataUnstable>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Tas[AbsoluteOffsetYUnstable(5)] => |cpu, bus, mode| {
+        mode.consume_data_unstable(cpu, bus, cpu.a & cpu.x);
+        cpu.s = cpu.a & cpu.x;
+
+        false
+    }
+);
+
+pub struct Lxa<Mode: ProducesData>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Lxa[Immediate(2)] => |cpu, bus, mode| {
+        let lhs = cpu.a;
+        let rhs = mode.produce_data(cpu, bus);
+        let result = lhs & rhs;
+
+        cpu.a = result;
+        cpu.x = result;
+
+        false
+    }
+);
+
+pub struct Las<Mode: ProducesData>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Las[AbsoluteOffsetY(4)] => |cpu, bus, mode| {
+        let lhs = mode.produce_data(cpu, bus);
+        let rhs = cpu.s;
+        let result = lhs & rhs;
+
+        cpu.a = result;
+        cpu.x = result;
+        cpu.s = result;
+
+        true
+    }
+);
+
+pub struct Sbx<Mode: ProducesData>(PhantomData<fn(Mode)>);
+
+instruction!(
+    Sbx[Immediate(2)] => |cpu, bus, mode| {
+        let lhs = cpu.a & cpu.x;
+        let rhs = mode.produce_data(cpu, bus);
+        let result = lhs.wrapping_sub(rhs);
+
+        cpu.x = result;
+        cpu.p.set(StatusFlags::C, lhs >= rhs);
+        cpu.p.set(StatusFlags::Z, result == 0);
+        cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
 
         false
     }

@@ -464,3 +464,148 @@ impl ConsumesData for IndirectOffsetY {
         bus.write(self.abs_addr, data);
     }
 }
+
+// Unstable addressing modes
+
+pub trait ConsumesDataUnstable: AddressingMode {
+    fn consume_data_unstable(&self, cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8);
+}
+
+pub struct AbsoluteOffsetXUnstable {
+    base_addr: u16,
+    abs_addr: u16,
+    page_crossed: bool,
+}
+
+impl Display for AbsoluteOffsetXUnstable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, " 0x{:0>4X},x", self.base_addr)
+    }
+}
+
+impl AddressingMode for AbsoluteOffsetXUnstable {
+    fn decode(cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> (Self, bool) {
+        let base_addr = bus.read_16(cpu.pc);
+        let abs_addr = base_addr.wrapping_add(cpu.x as u16);
+        cpu.pc = cpu.pc.wrapping_add(2);
+
+        let page_before = base_addr >> 8;
+        let page_after = abs_addr >> 8;
+        let page_crossed = page_after != page_before;
+
+        (
+            Self {
+                base_addr,
+                abs_addr,
+                page_crossed,
+            },
+            page_crossed,
+        )
+    }
+}
+
+impl ConsumesDataUnstable for AbsoluteOffsetXUnstable {
+    fn consume_data_unstable(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let addr = if self.page_crossed {
+            self.abs_addr & (((data as u16) << 8) | 0xFF)
+        } else {
+            self.abs_addr
+        };
+        let actual_data = data & ((self.abs_addr >> 8) as u8);
+        bus.write(addr, actual_data)
+    }
+}
+
+pub struct AbsoluteOffsetYUnstable {
+    base_addr: u16,
+    abs_addr: u16,
+    page_crossed: bool,
+}
+
+impl Display for AbsoluteOffsetYUnstable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, " 0x{:0>4X},y **", self.base_addr)
+    }
+}
+
+impl AddressingMode for AbsoluteOffsetYUnstable {
+    fn decode(cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> (Self, bool) {
+        let base_addr = bus.read_16(cpu.pc);
+        let abs_addr = base_addr.wrapping_add(cpu.y as u16);
+        cpu.pc = cpu.pc.wrapping_add(2);
+
+        let page_before = base_addr >> 8;
+        let page_after = abs_addr >> 8;
+        let page_crossed = page_after != page_before;
+
+        (
+            Self {
+                base_addr,
+                abs_addr,
+                page_crossed,
+            },
+            page_crossed,
+        )
+    }
+}
+
+impl ConsumesDataUnstable for AbsoluteOffsetYUnstable {
+    fn consume_data_unstable(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let addr = if self.page_crossed {
+            self.abs_addr & (((data as u16) << 8) | 0xFF)
+        } else {
+            self.abs_addr
+        };
+        let actual_data = data & ((self.abs_addr >> 8) as u8);
+        bus.write(addr, actual_data)
+    }
+}
+
+pub struct IndirectOffsetYUnstable {
+    zp_base_addr: u8,
+    abs_addr: u16,
+    page_crossed: bool,
+}
+
+impl Display for IndirectOffsetYUnstable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, " (0x{:0>2X}),y **", self.zp_base_addr)
+    }
+}
+
+impl AddressingMode for IndirectOffsetYUnstable {
+    fn decode(cpu: &mut Cpu, bus: &mut CpuBus<'_>) -> (Self, bool) {
+        let zp_base_addr = bus.read(cpu.pc);
+        cpu.pc = cpu.pc.wrapping_add(1);
+
+        let low = bus.read(zp_base_addr as u16);
+        let high = bus.read(zp_base_addr.wrapping_add(1) as u16);
+        let base_addr = u16::from_le_bytes([low, high]);
+        let abs_addr = base_addr.wrapping_add(cpu.y as u16);
+
+        let page_before = base_addr >> 8;
+        let page_after = abs_addr >> 8;
+        let page_crossed = page_after != page_before;
+
+        (
+            Self {
+                zp_base_addr,
+                abs_addr,
+                page_crossed,
+            },
+            page_crossed,
+        )
+    }
+}
+
+impl ConsumesDataUnstable for IndirectOffsetYUnstable {
+    fn consume_data_unstable(&self, _cpu: &mut Cpu, bus: &mut CpuBus<'_>, data: u8) {
+        let addr = if self.page_crossed {
+            self.abs_addr & (((data as u16) << 8) | 0xFF)
+        } else {
+            self.abs_addr
+        };
+        let actual_data = data & ((self.abs_addr >> 8) as u8);
+        bus.write(addr, actual_data)
+    }
+}
