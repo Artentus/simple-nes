@@ -19,6 +19,8 @@ const MAX_SCANLINE: i16 = 260;
 const HBLANK_CYCLE: u16 = 256;
 const VBLANK_LINE: i16 = 240;
 
+const OPEN_BUS_DECAY_CYCLE_COUNT: u32 = 1500000;
+
 // Helper function to keep some code below clean
 #[inline]
 fn select<T>(eval: bool, if_true: T, if_false: T) -> T {
@@ -355,6 +357,7 @@ pub struct Ppu {
     sprite_pattern_hi: [u8; 8],
     allow_zero_hit: bool,
     last_bus_value: u8, // PPU open bus
+    bus_decy_counter: u32,
 }
 
 impl Ppu {
@@ -390,7 +393,8 @@ impl Ppu {
             sprite_pattern_lo: [0; 8],
             sprite_pattern_hi: [0; 8],
             allow_zero_hit: false,
-            last_bus_value: 0xFF,
+            last_bus_value: 0,
+            bus_decy_counter: 0,
         }
     }
 
@@ -418,7 +422,8 @@ impl Ppu {
         self.control = PpuControl::empty();
         self.vram_addr = PpuRegister::new();
         self.tram_addr = PpuRegister::new();
-        self.last_bus_value = 0xFF;
+        self.last_bus_value = 0;
+        self.bus_decy_counter = 0;
     }
 
     pub fn check_nmi(&mut self) -> bool {
@@ -684,6 +689,12 @@ impl Ppu {
     }
 
     pub fn clock(&mut self, bus: &mut PpuBus<'_>) {
+        if self.bus_decy_counter > OPEN_BUS_DECAY_CYCLE_COUNT {
+            self.last_bus_value = 0;
+        } else {
+            self.bus_decy_counter += 1;
+        }
+
         if self.scanline < VBLANK_LINE {
             if (self.scanline == 0) && (self.cycle == 0) {
                 self.cycle = 1; // "Odd frame" skip
@@ -805,7 +816,7 @@ impl Ppu {
                     8
                 };
 
-                if (self.cycle > start_cycle) && (self.cycle < 258) {
+                if (self.cycle > start_cycle) && (self.cycle < 256) {
                     self.status.insert(PpuStatus::SPRITE_ZERO_HIT);
                 }
             }
@@ -855,12 +866,14 @@ impl Ppu {
                 self.ppu_addr_latch = false;
 
                 self.last_bus_value = tmp;
+                self.bus_decy_counter = 0;
                 tmp
             }
             ADDR_OAM_ADDRESS => 0, // Not readable
             ADDR_OAM_DATA => {
                 let value = self.oam.read(self.oam_addr);
                 self.last_bus_value = value;
+                self.bus_decy_counter = 0;
                 value
             }
             ADDR_SCROLL => self.last_bus_value, // Not readable
@@ -878,6 +891,7 @@ impl Ppu {
                 self.vram_addr.update_subfields();
 
                 self.last_bus_value = tmp;
+                self.bus_decy_counter = 0;
                 tmp
             }
             _ => self.last_bus_value,
@@ -886,6 +900,7 @@ impl Ppu {
 
     pub fn cpu_write(&mut self, bus: &mut PpuBus<'_>, addr: u16, data: u8) {
         self.last_bus_value = data;
+        self.bus_decy_counter = 0;
 
         match addr & 0x7 {
             ADDR_CONTROL => {
