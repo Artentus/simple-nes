@@ -41,10 +41,19 @@ impl PpuBus<'_> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DmaState {
+    Idle,
+    Scheduled,
+    Align,
+    Active,
+}
+
 pub struct Dma {
     page: u8,
     addr: u8,
-    active: bool,
+    state: DmaState,
+    value: u8,
 }
 
 impl Dma {
@@ -53,7 +62,8 @@ impl Dma {
         Self {
             page: 0,
             addr: 0,
-            active: false,
+            state: DmaState::Idle,
+            value: 0xFF,
         }
     }
 
@@ -61,7 +71,7 @@ impl Dma {
     pub fn write(&mut self, data: u8) {
         self.page = data;
         self.addr = 0;
-        self.active = true;
+        self.state = DmaState::Scheduled;
     }
 }
 
@@ -165,7 +175,6 @@ pub struct System {
     palette: Ram,
 
     cart: Cartridge,
-    even_cycle: bool,
     last_bus_value: u8, // to emulate open bus
 }
 
@@ -210,7 +219,6 @@ impl System {
             palette,
 
             cart,
-            even_cycle: false,
             last_bus_value,
         }
     }
@@ -238,8 +246,6 @@ impl System {
         };
 
         self.cpu.reset(&mut cpu_bus);
-
-        self.even_cycle = false;
     }
 
     pub fn framebuffer(&self) -> &[u8] {
@@ -253,10 +259,40 @@ impl System {
 
     pub fn clock(&mut self, cycles: usize, sample_buffer: &mut crate::SampleBuffer) {
         for _ in 0..cycles {
-            if self.dma.active {
-                if self.even_cycle {
+            match self.dma.state {
+                DmaState::Idle => {
+                    let mut cpu_bus = CpuBus {
+                        ram: &mut self.ram,
+                        ppu: &mut self.ppu,
+                        apu: &mut self.apu,
+                        dma: &mut self.dma,
+                        controller: &mut self.controller,
+                        cart: &mut self.cart,
+
+                        vram: &mut self.vram,
+                        palette: &mut self.palette,
+
+                        last_bus_value: &mut self.last_bus_value,
+                    };
+
+                    self.cpu.clock(&mut cpu_bus);
+                }
+                // halt cycle
+                DmaState::Scheduled => {
+                    self.dma.state = if self.apu.even_cycle() {
+                        // reads can only occur on even cycles, so DMA has to wait
+                        DmaState::Align
+                    } else {
+                        DmaState::Active
+                    };
+                }
+                // alignment cycle
+                DmaState::Align => {
+                    assert!(!self.apu.even_cycle());
+
+                    // dummy read
                     let addr = u16::from_le_bytes([self.dma.addr, self.dma.page]);
-                    let data = CpuBus {
+                    let _ = CpuBus {
                         ram: &mut self.ram,
                         ppu: &mut self.ppu,
                         apu: &mut self.apu,
@@ -271,29 +307,35 @@ impl System {
                     }
                     .read(addr);
 
-                    self.ppu.dma_write(data);
+                    self.dma.state = DmaState::Active;
+                }
+                DmaState::Active => {
+                    if self.apu.even_cycle() {
+                        let addr = u16::from_le_bytes([self.dma.addr, self.dma.page]);
+                        self.dma.value = CpuBus {
+                            ram: &mut self.ram,
+                            ppu: &mut self.ppu,
+                            apu: &mut self.apu,
+                            dma: &mut self.dma,
+                            controller: &mut self.controller,
+                            cart: &mut self.cart,
 
-                    self.dma.addr = self.dma.addr.wrapping_add(1);
-                    if self.dma.addr == 0 {
-                        self.dma.active = false;
+                            vram: &mut self.vram,
+                            palette: &mut self.palette,
+
+                            last_bus_value: &mut self.last_bus_value,
+                        }
+                        .read(addr);
+
+                        self.dma.addr = self.dma.addr.wrapping_add(1);
+                    } else {
+                        self.ppu.dma_write(self.dma.value);
+
+                        if self.dma.addr == 0 {
+                            self.dma.state = DmaState::Idle;
+                        }
                     }
                 }
-            } else {
-                let mut cpu_bus = CpuBus {
-                    ram: &mut self.ram,
-                    ppu: &mut self.ppu,
-                    apu: &mut self.apu,
-                    dma: &mut self.dma,
-                    controller: &mut self.controller,
-                    cart: &mut self.cart,
-
-                    vram: &mut self.vram,
-                    palette: &mut self.palette,
-
-                    last_bus_value: &mut self.last_bus_value,
-                };
-
-                self.cpu.clock(&mut cpu_bus);
             }
 
             self.apu.clock(&mut self.cart, sample_buffer);
@@ -321,8 +363,6 @@ impl System {
                 self.cart.reset_interrupt();
                 self.cpu.signal_irq();
             }
-
-            self.even_cycle = !self.even_cycle;
         }
     }
 }

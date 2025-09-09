@@ -715,7 +715,7 @@ impl Apu {
             noise_channel,
             dmc_channel,
             counter_mode: false,
-            even_cycle: false,
+            even_cycle: true,
             cycles: 0,
             inhibit_irq: true,
             irq: false,
@@ -724,6 +724,8 @@ impl Apu {
     }
 
     pub fn reset(&mut self) {
+        self.even_cycle = true;
+
         self.pulse_channel_1.enabled = false;
         self.pulse_channel_1.envelope.length_counter.counter = 0;
 
@@ -735,6 +737,11 @@ impl Apu {
 
         self.noise_channel.enabled = false;
         self.noise_channel.envelope.length_counter.counter = 0;
+    }
+
+    #[inline]
+    pub const fn even_cycle(&self) -> bool {
+        self.even_cycle
     }
 
     #[inline]
@@ -750,11 +757,10 @@ impl Apu {
     pub fn clock(&mut self, cart: &mut Cartridge, sample_buffer: &mut crate::SampleBuffer) {
         use ringbuf::traits::Producer;
 
-        self.even_cycle = !self.even_cycle;
-
         if self.even_cycle {
             self.cycles += 1;
         }
+        self.even_cycle = !self.even_cycle;
 
         let full = if self.counter_mode {
             self.cycles == 18641
