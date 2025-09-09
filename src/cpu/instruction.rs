@@ -1075,7 +1075,7 @@ instruction!(
         let result = lhs & rhs;
 
         cpu.a = result;
-        cpu.p.set(StatusFlags::C, (lhs & 0x80) != 0);
+        cpu.p.set(StatusFlags::C, (result & 0x80) != 0);
         cpu.p.set(StatusFlags::Z, result == 0);
         cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
 
@@ -1111,9 +1111,15 @@ instruction!(
         let result = (and_result >> 1) | ((cpu.p.contains(StatusFlags::C) as u8) << 7);
 
         cpu.a = result;
-        cpu.p.set(StatusFlags::C, (and_result & 0x01) != 0);
+        cpu.p.set(StatusFlags::C, (and_result & 0x80) != 0);
         cpu.p.set(StatusFlags::Z, result == 0);
         cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
+
+        let add_result = and_result.wrapping_add(rhs);
+        let lhs_sign = and_result & 0x80;
+        let rhs_sign = rhs & 0x80;
+        let result_sign = add_result & 0x80;
+        cpu.p.set(StatusFlags::V, (lhs_sign == rhs_sign) & (lhs_sign != result_sign));
 
         false
     }
@@ -1124,7 +1130,7 @@ pub struct Ane<Mode: ProducesData>(PhantomData<fn(Mode)>);
 instruction!(
     Ane[Immediate(2)] => |cpu, bus, mode| {
         let rhs = mode.produce_data(cpu, bus);
-        let result = cpu.a & cpu.x & rhs;
+        let result = (cpu.a | 0xEE) & cpu.x & rhs;
 
         cpu.a = result;
         cpu.p.set(StatusFlags::Z, result == 0);
@@ -1182,12 +1188,14 @@ pub struct Lxa<Mode: ProducesData>(PhantomData<fn(Mode)>);
 
 instruction!(
     Lxa[Immediate(2)] => |cpu, bus, mode| {
-        let lhs = cpu.a;
+        let lhs = cpu.a | 0xEE;
         let rhs = mode.produce_data(cpu, bus);
         let result = lhs & rhs;
 
         cpu.a = result;
         cpu.x = result;
+        cpu.p.set(StatusFlags::Z, result == 0);
+        cpu.p.set(StatusFlags::N, (result & 0x80) != 0);
 
         false
     }
