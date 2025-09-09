@@ -884,6 +884,7 @@ impl Ppu {
                 self.ppu_data_buffer = self.read_bus(bus, self.vram_addr.value);
                 if self.vram_addr.value >= 0x3F00 {
                     tmp = self.ppu_data_buffer;
+                    self.ppu_data_buffer = self.read_bus(bus, self.vram_addr.value & 0x27FF);
                 }
                 // Auto-increment
                 self.vram_addr.value +=
