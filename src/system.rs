@@ -175,7 +175,8 @@ pub struct System {
     palette: Ram,
 
     cart: Cartridge,
-    last_bus_value: u8, // to emulate open bus
+    dmc_halt_cycles: u8, // DMC DMA
+    last_bus_value: u8,  // to emulate open bus
 }
 
 impl System {
@@ -219,6 +220,7 @@ impl System {
             palette,
 
             cart,
+            dmc_halt_cycles: 0,
             last_bus_value,
         }
     }
@@ -229,6 +231,7 @@ impl System {
         self.ppu.reset();
         self.apu.reset();
 
+        self.dmc_halt_cycles = 0;
         self.last_bus_value = 0xFF;
 
         let mut cpu_bus = CpuBus {
@@ -261,21 +264,27 @@ impl System {
         for _ in 0..cycles {
             match self.dma.state {
                 DmaState::Idle => {
-                    let mut cpu_bus = CpuBus {
-                        ram: &mut self.ram,
-                        ppu: &mut self.ppu,
-                        apu: &mut self.apu,
-                        dma: &mut self.dma,
-                        controller: &mut self.controller,
-                        cart: &mut self.cart,
+                    self.dmc_halt_cycles = self.apu.clock(&mut self.cart, sample_buffer);
 
-                        vram: &mut self.vram,
-                        palette: &mut self.palette,
+                    if self.dmc_halt_cycles > 0 {
+                        self.dmc_halt_cycles -= 1;
+                    } else {
+                        let mut cpu_bus = CpuBus {
+                            ram: &mut self.ram,
+                            ppu: &mut self.ppu,
+                            apu: &mut self.apu,
+                            dma: &mut self.dma,
+                            controller: &mut self.controller,
+                            cart: &mut self.cart,
 
-                        last_bus_value: &mut self.last_bus_value,
-                    };
+                            vram: &mut self.vram,
+                            palette: &mut self.palette,
 
-                    self.cpu.clock(&mut cpu_bus);
+                            last_bus_value: &mut self.last_bus_value,
+                        };
+
+                        self.cpu.clock(&mut cpu_bus);
+                    }
                 }
                 // halt cycle
                 DmaState::Scheduled => {
@@ -285,6 +294,8 @@ impl System {
                     } else {
                         DmaState::Active
                     };
+
+                    self.apu.clock(&mut self.cart, sample_buffer);
                 }
                 // alignment cycle
                 DmaState::Align => {
@@ -308,6 +319,8 @@ impl System {
                     .read(addr);
 
                     self.dma.state = DmaState::Active;
+
+                    self.apu.clock(&mut self.cart, sample_buffer);
                 }
                 DmaState::Active => {
                     if self.apu.even_cycle() {
@@ -335,10 +348,10 @@ impl System {
                             self.dma.state = DmaState::Idle;
                         }
                     }
+
+                    self.apu.clock(&mut self.cart, sample_buffer);
                 }
             }
-
-            self.apu.clock(&mut self.cart, sample_buffer);
 
             let mut ppu_bus = PpuBus {
                 cart: &mut self.cart,

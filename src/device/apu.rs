@@ -248,6 +248,10 @@ impl PulseChannel {
     }
 
     fn write(&mut self, address: u8, data: u8) {
+        if !self.enabled {
+            return;
+        }
+
         match address {
             0 => {
                 let sequence_index = ((data & 0xC0) >> 6) as usize;
@@ -321,6 +325,10 @@ impl TriangleChannel {
     }
 
     fn write(&mut self, address: u8, data: u8) {
+        if !self.enabled {
+            return;
+        }
+
         match address {
             0 => {
                 self.length_counter.halt = (data & 0x80) != 0;
@@ -431,6 +439,10 @@ impl NoiseChannel {
     }
 
     fn write(&mut self, address: u8, data: u8) {
+        if !self.enabled {
+            return;
+        }
+
         const PERIOD_LOOKUP: [u16; 16] = [
             4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
         ];
@@ -581,7 +593,9 @@ impl SampleReader {
         self.has_ended
     }
 
-    fn clock(&mut self, cart: &mut Cartridge) {
+    fn clock(&mut self, cart: &mut Cartridge) -> bool {
+        let mut halt_cpu = false;
+
         if self.bits_remaining == 0 {
             self.bits_remaining = 8;
 
@@ -596,6 +610,7 @@ impl SampleReader {
                     }
                 }
 
+                halt_cpu = true;
                 self.current = cart.cpu_read(self.current_pos).unwrap_or_default();
                 self.current_pos = self.current_pos.wrapping_add(1);
                 if self.current_pos == 0 {
@@ -608,6 +623,8 @@ impl SampleReader {
         self.output = (self.current & 0x01) != 0;
         self.current >>= 1;
         self.bits_remaining -= 1;
+
+        halt_cpu
     }
 }
 
@@ -631,6 +648,10 @@ impl DmcChannel {
     }
 
     fn write(&mut self, address: u8, data: u8) {
+        if !self.enabled {
+            return;
+        }
+
         const RATE_LOOKUP: [u8; 16] = [
             214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27,
         ];
@@ -655,12 +676,14 @@ impl DmcChannel {
         }
     }
 
-    fn clock(&mut self, cart: &mut Cartridge) {
+    fn clock(&mut self, cart: &mut Cartridge) -> bool {
+        let mut halt_cpu = false;
+
         self.cycles = self.cycles.wrapping_add(1);
         if self.cycles == self.rate {
             self.cycles = 0;
 
-            self.reader.clock(cart);
+            halt_cpu = self.reader.clock(cart);
             if !self.reader.has_ended() {
                 if self.reader.output() {
                     if self.output <= 125 {
@@ -671,6 +694,8 @@ impl DmcChannel {
                 }
             }
         }
+
+        halt_cpu
     }
 
     fn sample(&mut self) -> f32 {
@@ -695,7 +720,9 @@ pub struct Apu {
     counter_mode: bool,
     even_cycle: bool,
     cycles: u32,
+    reset_cycles: bool,
     inhibit_irq: bool,
+    clear_irq: bool,
     irq: bool,
     t: f64,
 }
@@ -717,15 +744,15 @@ impl Apu {
             counter_mode: false,
             even_cycle: true,
             cycles: 0,
+            reset_cycles: false,
             inhibit_irq: true,
+            clear_irq: false,
             irq: false,
             t: 0.0,
         }
     }
 
     pub fn reset(&mut self) {
-        self.even_cycle = true;
-
         self.pulse_channel_1.enabled = false;
         self.pulse_channel_1.envelope.length_counter.counter = 0;
 
@@ -737,6 +764,15 @@ impl Apu {
 
         self.noise_channel.enabled = false;
         self.noise_channel.envelope.length_counter.counter = 0;
+
+        self.counter_mode = false;
+        self.even_cycle = true;
+        self.cycles = 0;
+        self.reset_cycles = false;
+        self.inhibit_irq = true;
+        self.clear_irq = false;
+        self.irq = false;
+        self.t = 0.0;
     }
 
     #[inline]
@@ -754,22 +790,33 @@ impl Apu {
         self.irq
     }
 
-    pub fn clock(&mut self, cart: &mut Cartridge, sample_buffer: &mut crate::SampleBuffer) {
+    pub fn clock(&mut self, cart: &mut Cartridge, sample_buffer: &mut crate::SampleBuffer) -> u8 {
         use ringbuf::traits::Producer;
 
         if self.even_cycle {
             self.cycles += 1;
         }
-        self.even_cycle = !self.even_cycle;
+
+        if self.clear_irq {
+            self.irq = false;
+            self.clear_irq = false;
+        }
 
         let full = if self.counter_mode {
             self.cycles == 18641
         } else {
             self.cycles == 14915
         };
-        let half = (self.cycles == 7457) || full;
-        let quarter = (self.cycles == 3729) || (self.cycles == 11186) || half;
-        if full {
+        let mut half = (self.cycles == 7457) || full;
+        let mut quarter = (self.cycles == 3729) || (self.cycles == 11186) || half;
+        if self.reset_cycles && self.even_cycle {
+            self.cycles = 0;
+            self.reset_cycles = false;
+            if self.counter_mode {
+                half = true;
+                quarter = true;
+            }
+        } else if full {
             self.cycles = 0;
             if !self.inhibit_irq && !self.counter_mode {
                 self.irq = true;
@@ -779,11 +826,15 @@ impl Apu {
         self.triangle_channel
             .clock(quarter & self.even_cycle, half & self.even_cycle);
 
+        let mut cpu_halt_cycles = 0;
+
         if self.even_cycle {
             self.pulse_channel_1.clock(quarter, half);
             self.pulse_channel_2.clock(quarter, half);
             self.noise_channel.clock(quarter, half);
-            self.dmc_channel.clock(cart);
+            if self.dmc_channel.clock(cart) {
+                cpu_halt_cycles = 4;
+            }
 
             let pulse_1_sample = self.pulse_channel_1.sample();
             let pulse_2_sample = self.pulse_channel_2.sample();
@@ -802,6 +853,9 @@ impl Apu {
                 sample_buffer.try_push(sample).unwrap();
             }
         }
+
+        self.even_cycle = !self.even_cycle;
+        cpu_halt_cycles
     }
 
     #[inline]
@@ -843,7 +897,11 @@ impl Apu {
             result |= 0x80;
         }
 
-        self.irq = false;
+        if self.even_cycle {
+            self.irq = false;
+        } else {
+            self.clear_irq = true;
+        }
 
         result
     }
@@ -887,5 +945,9 @@ impl Apu {
     pub fn write_frame_counter(&mut self, data: u8) {
         self.counter_mode = (data & 0x80) != 0;
         self.inhibit_irq = (data & 0x40) != 0;
+        if self.inhibit_irq {
+            self.irq = false;
+        }
+        self.reset_cycles = true;
     }
 }
